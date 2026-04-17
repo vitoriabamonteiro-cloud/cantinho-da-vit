@@ -1,19 +1,38 @@
 const CALENDAR_API = "https://www.googleapis.com/calendar/v3";
 
-export async function fetchCalendarEvents(accessToken, timeMin, timeMax) {
+export async function fetchAllCalendars(accessToken) {
+  try {
+    const res = await fetch(`${CALENDAR_API}/users/me/calendarList`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) throw new Error(`CalendarList error: ${res.status}`);
+    const data = await res.json();
+    return (data.items || []).map(cal => ({
+      id: cal.id,
+      name: cal.summary || "",
+      color: cal.backgroundColor || "#a78bfa",
+      primary: cal.primary || false,
+    }));
+  } catch (e) {
+    console.error("CalendarList fetch error:", e);
+    return [];
+  }
+}
+
+export async function fetchCalendarEvents(accessToken, calendarId, timeMin, timeMax) {
   try {
     const params = new URLSearchParams({
       timeMin: timeMin.toISOString(),
       timeMax: timeMax.toISOString(),
       singleEvents: "true",
       orderBy: "startTime",
-      maxResults: "100",
+      maxResults: "250",
     });
     const res = await fetch(
-      `${CALENDAR_API}/calendars/primary/events?${params}`,
+      `${CALENDAR_API}/calendars/${encodeURIComponent(calendarId)}/events?${params}`,
       { headers: { Authorization: `Bearer ${accessToken}` } }
     );
-    if (!res.ok) throw new Error(`Calendar API error: ${res.status}`);
+    if (!res.ok) return [];
     const data = await res.json();
     return (data.items || []).map(ev => ({
       id: ev.id,
@@ -22,12 +41,27 @@ export async function fetchCalendarEvents(accessToken, timeMin, timeMax) {
       end: ev.end?.dateTime || ev.end?.date || "",
       allDay: !ev.start?.dateTime,
       location: ev.location || "",
-      description: ev.description || "",
+      calendarId,
     }));
   } catch (e) {
-    console.error("Calendar fetch error:", e);
+    console.error("Events fetch error:", e);
     return [];
   }
+}
+
+export async function fetchAllEvents(accessToken, timeMin, timeMax) {
+  const calendars = await fetchAllCalendars(accessToken);
+  const allEvents = [];
+  for (const cal of calendars) {
+    const events = await fetchCalendarEvents(accessToken, cal.id, timeMin, timeMax);
+    events.forEach(ev => {
+      ev.calendarName = cal.name;
+      ev.calendarColor = cal.color;
+    });
+    allEvents.push(...events);
+  }
+  allEvents.sort((a, b) => new Date(a.start) - new Date(b.start));
+  return { calendars, events: allEvents };
 }
 
 export function getWeekRange() {
@@ -59,12 +93,6 @@ export function formatDateShort(dateStr) {
   if (!dateStr) return "";
   const d = new Date(dateStr);
   return d.toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" });
-}
-
-export function formatDateFull(dateStr) {
-  if (!dateStr) return "";
-  const d = new Date(dateStr);
-  return d.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
 }
 
 export function isSameDay(d1, d2) {
