@@ -14,6 +14,7 @@ const BOOK_STATUSES = [
   { id: "quero", label: "Quero ler", icon: "💭", color: "#c4b5fd" },
   { id: "lendo", label: "Lendo", icon: "📖", color: "#93c5fd" },
   { id: "lido", label: "Lido", icon: "✅", color: "#a7f3d0" },
+  { id: "desisti", label: "Desisti", icon: "🚫", color: "#fca5a5" },
 ];
 
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -414,40 +415,96 @@ function CursosPage({ data, setData }) {
 }
 
 /* ─── Library Page ─── */
+const GENRES = [
+  { id: "ficcao", label: "Ficção", color: "#c4b5fd" },
+  { id: "romance", label: "Romance", color: "#fbcfe8" },
+  { id: "autoajuda", label: "Autoajuda", color: "#a7f3d0" },
+  { id: "negocios", label: "Negócios", color: "#93c5fd" },
+  { id: "biografia", label: "Biografia", color: "#fde68a" },
+  { id: "fantasia", label: "Fantasia", color: "#ddd6fe" },
+  { id: "suspense", label: "Suspense", color: "#fca5a5" },
+  { id: "psicologia", label: "Psicologia", color: "#a5f3fc" },
+  { id: "educacao", label: "Educação", color: "#bfdbfe" },
+  { id: "outro", label: "Outro", color: "#e0f2fe" },
+];
+
 function LibraryPage({ books, setBooks }) {
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
   const [filter, setFilter] = useState("all");
+  const [genreFilter, setGenreFilter] = useState("all");
 
-  const addBook = () => { if (!form.title) return; setBooks([...books, { id: uid(), title: form.title, author: form.author || "", status: form.status || "quero", rating: 0 }]); setForm({}); setModal(null); };
+  const addBook = () => {
+    if (!form.title) return;
+    setBooks([...books, {
+      id: uid(), title: form.title, author: form.author || "",
+      status: form.status || "quero", rating: 0,
+      pages: form.pages || "", genre: form.genre || "outro",
+      startDate: form.startDate || "", endDate: form.endDate || "",
+    }]);
+    setForm({}); setModal(null);
+  };
   const deleteBook = (id) => setBooks(books.filter(b => b.id !== id));
-  const cycleStatus = (id) => { const order = ["quero", "lendo", "lido"]; setBooks(books.map(b => { if (b.id !== id) return b; const idx = order.indexOf(b.status); return { ...b, status: order[(idx + 1) % order.length] }; })); };
+  const cycleStatus = (id) => {
+    const order = ["quero", "lendo", "lido", "desisti"];
+    setBooks(books.map(b => {
+      if (b.id !== id) return b;
+      const idx = order.indexOf(b.status);
+      const newStatus = order[(idx + 1) % order.length];
+      const updates = { status: newStatus };
+      if (newStatus === "lendo" && !b.startDate) updates.startDate = new Date().toLocaleDateString("pt-BR");
+      if (newStatus === "lido" && !b.endDate) updates.endDate = new Date().toLocaleDateString("pt-BR");
+      return { ...b, ...updates };
+    }));
+  };
   const setRating = (id, r) => setBooks(books.map(b => b.id === id ? { ...b, rating: r } : b));
-  const filtered = filter === "all" ? books : books.filter(b => b.status === filter);
-  const counts = { all: books.length, quero: books.filter(b => b.status === "quero").length, lendo: books.filter(b => b.status === "lendo").length, lido: books.filter(b => b.status === "lido").length };
+
+  let filtered = filter === "all" ? books : books.filter(b => b.status === filter);
+  if (genreFilter !== "all") filtered = filtered.filter(b => b.genre === genreFilter);
+
+  const counts = { all: books.length, quero: books.filter(b => b.status === "quero").length, lendo: books.filter(b => b.status === "lendo").length, lido: books.filter(b => b.status === "lido").length, desisti: books.filter(b => b.status === "desisti").length };
 
   return (
     <div>
-      <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
+      {/* Status filters */}
+      <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
         {[{ id: "all", label: "Todos", icon: "📚", color: palette.lilac }, ...BOOK_STATUSES].map(s => (
           <button key={s.id} onClick={() => setFilter(s.id)} style={{ fontFamily: font, border: "none", cursor: "pointer", borderRadius: 14, padding: "10px 16px", fontSize: 13, fontWeight: 600, background: filter === s.id ? (s.id === "all" ? palette.lilacDark : s.color) : "#f5f3ff", color: filter === s.id ? (s.id === "all" ? "#fff" : palette.text) : palette.textMuted, transition: "all 0.2s" }}>
             {s.icon} {s.label} ({counts[s.id]})
           </button>
         ))}
       </div>
+      {/* Genre filters */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 20, flexWrap: "wrap" }}>
+        <button onClick={() => setGenreFilter("all")} style={{ fontFamily: font, border: "none", cursor: "pointer", borderRadius: 10, padding: "6px 12px", fontSize: 11, fontWeight: 600, background: genreFilter === "all" ? palette.lilacDark : "#f5f3ff", color: genreFilter === "all" ? "#fff" : palette.textMuted, transition: "all 0.2s" }}>Todos os gêneros</button>
+        {GENRES.map(g => {
+          const count = books.filter(b => b.genre === g.id).length;
+          if (count === 0) return null;
+          return <button key={g.id} onClick={() => setGenreFilter(g.id)} style={{ fontFamily: font, border: "none", cursor: "pointer", borderRadius: 10, padding: "6px 12px", fontSize: 11, fontWeight: 600, background: genreFilter === g.id ? g.color : "#f5f3ff", color: genreFilter === g.id ? palette.text : palette.textMuted, transition: "all 0.2s" }}>{g.label} ({count})</button>;
+        })}
+      </div>
+
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <h3 style={{ margin: 0, color: palette.text, fontFamily: font, fontSize: 17 }}>📖 Minha Biblioteca</h3>
         <Btn onClick={() => setModal("add")} small>＋ Adicionar livro</Btn>
       </div>
       {filtered.length === 0 ? <EmptyState icon="📖" text="Nenhum livro aqui ainda..." /> :
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
           {filtered.map(b => {
             const st = BOOK_STATUSES.find(s => s.id === b.status);
+            const genre = GENRES.find(g => g.id === b.genre);
             return (
               <Card key={b.id} style={{ padding: "18px 20px", position: "relative" }}>
                 <div style={{ position: "absolute", top: 12, right: 12 }}><DeleteBtn onClick={() => deleteBook(b.id)} /></div>
+                {genre && <span style={{ display: "inline-block", background: genre.color, color: palette.text, fontFamily: font, fontSize: 10, fontWeight: 700, borderRadius: 8, padding: "2px 8px", marginBottom: 6 }}>{genre.label}</span>}
                 <div style={{ fontWeight: 700, color: palette.text, fontFamily: font, fontSize: 15, paddingRight: 28 }}>{b.title}</div>
                 {b.author && <div style={{ color: palette.textMuted, fontSize: 13, fontFamily: font, marginTop: 2 }}>{b.author}</div>}
+                {/* Details row */}
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+                  {b.pages && <span style={{ fontFamily: font, fontSize: 11, color: palette.textMuted, background: palette.bg, borderRadius: 8, padding: "3px 8px" }}>📄 {b.pages} págs</span>}
+                  {b.startDate && <span style={{ fontFamily: font, fontSize: 11, color: palette.textMuted, background: palette.bg, borderRadius: 8, padding: "3px 8px" }}>📅 Início: {b.startDate}</span>}
+                  {b.endDate && <span style={{ fontFamily: font, fontSize: 11, color: palette.textMuted, background: palette.bg, borderRadius: 8, padding: "3px 8px" }}>🏁 Fim: {b.endDate}</span>}
+                </div>
                 <button onClick={() => cycleStatus(b.id)} style={{ display: "inline-block", marginTop: 10, background: st.color, color: palette.text, fontFamily: font, fontSize: 12, fontWeight: 700, borderRadius: 10, padding: "5px 12px", border: "none", cursor: "pointer", transition: "all 0.2s" }}>
                   {st.icon} {st.label}
                 </button>
@@ -467,6 +524,28 @@ function LibraryPage({ books, setBooks }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <Input value={form.title || ""} onChange={v => setForm({ ...form, title: v })} placeholder="Título do livro" />
           <Input value={form.author || ""} onChange={v => setForm({ ...form, author: v })} placeholder="Autor(a)" />
+          <Input value={form.pages || ""} onChange={v => setForm({ ...form, pages: v })} placeholder="Número de páginas" type="number" />
+          <div style={{ fontFamily: font, fontSize: 13, fontWeight: 700, color: palette.text }}>Gênero</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {GENRES.map(g => (
+              <button key={g.id} onClick={() => setForm({ ...form, genre: g.id })} style={{
+                fontFamily: font, border: `2px solid ${(form.genre || "outro") === g.id ? palette.lilacDark : "transparent"}`,
+                borderRadius: 10, padding: "6px 12px", fontSize: 12, fontWeight: 600,
+                background: g.color, color: palette.text, cursor: "pointer", transition: "all 0.2s",
+              }}>{g.label}</button>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontFamily: font, fontSize: 12, color: palette.textMuted, marginBottom: 4 }}>Início da leitura</div>
+              <Input value={form.startDate || ""} onChange={v => setForm({ ...form, startDate: v })} placeholder="dd/mm/aaaa" />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontFamily: font, fontSize: 12, color: palette.textMuted, marginBottom: 4 }}>Fim da leitura</div>
+              <Input value={form.endDate || ""} onChange={v => setForm({ ...form, endDate: v })} placeholder="dd/mm/aaaa" />
+            </div>
+          </div>
+          <div style={{ fontFamily: font, fontSize: 13, fontWeight: 700, color: palette.text }}>Status</div>
           <div style={{ display: "flex", gap: 8 }}>
             {BOOK_STATUSES.map(s => (
               <button key={s.id} onClick={() => setForm({ ...form, status: s.id })} style={{ flex: 1, fontFamily: font, border: `2px solid ${(form.status || "quero") === s.id ? palette.lilacDark : "transparent"}`, borderRadius: 12, padding: "8px", fontSize: 13, fontWeight: 600, background: s.color, color: palette.text, cursor: "pointer", transition: "all 0.2s" }}>
@@ -675,6 +754,22 @@ const initialPosSubjects = () => [
   makeTCC(),
 ];
 
+/* ─── Pre-populated Books ─── */
+const initialBooks = () => [
+  { id: uid(), title: "Império da Tempestade - tomo 1", author: "Sarah J Maas", genre: "fantasia", status: "lido", rating: 5, pages: "", startDate: "30/12/2025", endDate: "08/01/2026" },
+  { id: uid(), title: "Império da Tempestade - tomo 2", author: "Sarah J Maas", genre: "fantasia", status: "lido", rating: 5, pages: "", startDate: "08/01/2026", endDate: "12/01/2026" },
+  { id: uid(), title: "Torre do Alvorecer", author: "Sarah J Maas", genre: "fantasia", status: "lido", rating: 5, pages: "", startDate: "12/01/2026", endDate: "20/01/2026" },
+  { id: uid(), title: "Reino das Cinzas", author: "Sarah J Maas", genre: "fantasia", status: "lido", rating: 5, pages: "", startDate: "21/01/2026", endDate: "06/02/2026" },
+  { id: uid(), title: "Como seduzir a capitã", author: "Sarah Oliveira", genre: "romance", status: "lido", rating: 5, pages: "", startDate: "25/02/2026", endDate: "27/02/2026" },
+  { id: uid(), title: "Como seduzir a novata", author: "Helena Vieria", genre: "romance", status: "lido", rating: 4, pages: "", startDate: "27/02/2026", endDate: "03/03/2026" },
+  { id: uid(), title: "Eles odeiam garotas como nós", author: "Yasmim Mahmud Kade", genre: "romance", status: "lido", rating: 4, pages: "", startDate: "03/03/2026", endDate: "31/03/2026" },
+  { id: uid(), title: "Amanhecer na Colheita", author: "Suzanne Collins", genre: "ficcao", status: "lendo", rating: 0, pages: "", startDate: "06/02/2026", endDate: "" },
+  { id: uid(), title: "A Bíblia do Tarot", author: "Rachel Pollack", genre: "outro", status: "quero", rating: 0, pages: "", startDate: "", endDate: "" },
+  { id: uid(), title: "A Hospedeira", author: "Stephenie Meyer", genre: "ficcao", status: "quero", rating: 0, pages: "", startDate: "", endDate: "" },
+  { id: uid(), title: "Coração de Tinta", author: "", genre: "ficcao", status: "quero", rating: 0, pages: "", startDate: "", endDate: "" },
+  { id: uid(), title: "Bestiário brasileiro: Monstros, visagens e assombrações", author: "Luiz Antonio Simas", genre: "ficcao", status: "desisti", rating: 0, pages: "", startDate: "24/02/2026", endDate: "" },
+];
+
 /* ─── Password Screen ─── */
 const SITE_PASSWORD = "69871143";
 
@@ -758,7 +853,8 @@ export default function App() {
       const po = await store.get("pos");
       if (po && po.subjects && po.subjects.length > 0) { setPosData(po); } else { setPosData({ subjects: initialPosSubjects() }); }
       const cu = await store.get("cursos"); if (cu) setCursosData(cu);
-      const bk = await store.get("books"); if (bk) setBooks(bk);
+      const bk = await store.get("books");
+      if (bk && bk.length > 0) { setBooks(bk); } else { setBooks(initialBooks()); }
       const lk = await store.get("links-uteis"); if (lk) setLinksData(lk);
       setLoaded(true);
     })();
