@@ -675,8 +675,73 @@ const initialPosSubjects = () => [
   makeTCC(),
 ];
 
+/* ─── Password Screen ─── */
+const SITE_PASSWORD = "69871143";
+
+function LoginScreen({ onLogin }) {
+  const [pw, setPw] = useState("");
+  const [error, setError] = useState(false);
+  const [shake, setShake] = useState(false);
+
+  const handleLogin = () => {
+    if (pw === SITE_PASSWORD) {
+      sessionStorage.setItem("vit-auth", "true");
+      onLogin();
+    } else {
+      setError(true);
+      setShake(true);
+      setTimeout(() => setShake(false), 500);
+    }
+  };
+
+  return (
+    <div style={{
+      minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
+      background: "linear-gradient(135deg, #faf5ff 0%, #fce7f3 50%, #eff6ff 100%)",
+      fontFamily: font,
+    }}>
+      <style>{`
+        @keyframes shake { 0%,100% { transform:translateX(0); } 25% { transform:translateX(-8px); } 75% { transform:translateX(8px); } }
+        @keyframes float { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-10px); } }
+      `}</style>
+      <div style={{
+        background: "#fff", borderRadius: 28, padding: "48px 40px", textAlign: "center",
+        boxShadow: "0 20px 60px rgba(124,58,237,0.12)", maxWidth: 380, width: "90%",
+        animation: shake ? "shake 0.4s ease" : "none",
+      }}>
+        <div style={{ fontSize: 56, marginBottom: 16, animation: "float 3s ease-in-out infinite" }}>✨</div>
+        <div style={{ fontSize: 24, fontWeight: 800, color: palette.text, marginBottom: 4 }}>Cantinho da Vit</div>
+        <div style={{ fontSize: 14, color: palette.textMuted, marginBottom: 28 }}>Digite a senha pra entrar 💜</div>
+        <input
+          type="password"
+          value={pw}
+          onChange={e => { setPw(e.target.value); setError(false); }}
+          onKeyDown={e => e.key === "Enter" && handleLogin()}
+          placeholder="Senha"
+          style={{
+            fontFamily: font, border: `2px solid ${error ? palette.dangerDark : palette.border}`,
+            borderRadius: 14, padding: "12px 16px", fontSize: 16, width: "100%", boxSizing: "border-box",
+            outline: "none", color: palette.text, background: palette.bg, textAlign: "center",
+            transition: "border-color 0.2s", letterSpacing: 4,
+          }}
+        />
+        {error && <div style={{ color: palette.dangerDark, fontSize: 13, marginTop: 8, fontWeight: 600 }}>Senha incorreta 🔒</div>}
+        <button onClick={handleLogin} style={{
+          fontFamily: font, border: "none", cursor: "pointer", fontWeight: 700,
+          borderRadius: 14, padding: "12px 32px", fontSize: 15, marginTop: 20,
+          background: `linear-gradient(135deg, ${palette.lilacDark}, ${palette.pinkDark})`,
+          color: "#fff", transition: "all 0.2s", width: "100%",
+        }}>
+          Entrar 🌸
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Main App ─── */
 export default function App() {
+  const [authed, setAuthed] = useState(() => sessionStorage.getItem("vit-auth") === "true");
   const [page, setPage] = useState("home");
   const [inglesData, setInglesData] = useState({ notes: [], schedule: [], links: [] });
   const [posData, setPosData] = useState({ subjects: [] });
@@ -707,6 +772,8 @@ export default function App() {
   useEffect(() => { if (loaded) store.set("links-uteis", linksData); }, [linksData, loaded]);
 
   const currentPage = PAGES.find(p => p.id === page);
+
+  if (!authed) return <LoginScreen onLogin={() => setAuthed(true)} />;
 
   if (!loaded) return (
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: palette.bg, fontFamily: font, color: palette.textLight, fontSize: 18 }}>
