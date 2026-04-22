@@ -27,6 +27,7 @@ export async function fetchCalendarEvents(accessToken, calendarId, timeMin, time
       singleEvents: "true",
       orderBy: "startTime",
       maxResults: "250",
+      timeZone: "America/Sao_Paulo",
     });
     const res = await fetch(
       `${CALENDAR_API}/calendars/${encodeURIComponent(calendarId)}/events?${params}`,
@@ -83,22 +84,6 @@ export function getMonthRange(year, month) {
   return { start, end };
 }
 
-export function formatTime(dateStr) {
-  if (!dateStr) return "";
-  const d = new Date(dateStr);
-  return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-}
-
-export function formatDateShort(dateStr) {
-  if (!dateStr) return "";
-  const d = new Date(dateStr);
-  return d.toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" });
-}
-
-export function isSameDay(d1, d2) {
-  return d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate();
-}
-
 // Parse event date correctly - all-day events come as "YYYY-MM-DD" which
 // JavaScript interprets as UTC midnight, shifting the day in negative timezones.
 // This function parses dates correctly for local timezone.
@@ -111,4 +96,20 @@ export function parseEventDate(dateStr) {
   }
   // Regular event with time: "2026-04-25T13:00:00-03:00"
   return new Date(dateStr);
+}
+
+export function formatTime(dateStr) {
+  if (!dateStr) return "";
+  const d = parseEventDate(dateStr);
+  return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+}
+
+export function formatDateShort(dateStr) {
+  if (!dateStr) return "";
+  const d = parseEventDate(dateStr);
+  return d.toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" });
+}
+
+export function isSameDay(d1, d2) {
+  return d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate();
 }
