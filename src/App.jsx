@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { store } from "./store";
 import { auth, googleProvider } from "./firebase";
 import { signInWithPopup, onAuthStateChanged, signOut } from "firebase/auth";
-import { fetchAllEvents, getWeekRange, getMonthRange, formatTime, formatDateShort, isSameDay } from "./calendar";
+import { fetchAllEvents, getWeekRange, getMonthRange, formatTime, formatDateShort, isSameDay, parseEventDate } from "./calendar";
 
 const PAGES = [
   { id: "home", label: "Home", icon: "🏠" },
@@ -126,7 +126,7 @@ function AgendaPage({ accessToken }) {
   const getEventsForDay = (day) => {
     const date = new Date(year, month, day);
     return events.filter(ev => {
-      const evDate = new Date(ev.start);
+      const evDate = parseEventDate(ev.start);
       return isSameDay(evDate, date);
     });
   };
@@ -221,7 +221,7 @@ function WeekEventsWidget({ accessToken }) {
 
   const grouped = {};
   events.forEach(ev => {
-    const d = new Date(ev.start);
+    const d = parseEventDate(ev.start);
     const key = d.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit" });
     if (!grouped[key]) grouped[key] = [];
     grouped[key].push(ev);
