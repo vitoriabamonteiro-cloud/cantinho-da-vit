@@ -60,7 +60,7 @@ export async function fetchAllEvents(accessToken, timeMin, timeMax) {
     });
     allEvents.push(...events);
   }
-  allEvents.sort((a, b) => new Date(a.start) - new Date(b.start));
+  allEvents.sort((a, b) => parseEventDate(a.start) - parseEventDate(b.start));
   return { calendars, events: allEvents };
 }
 
@@ -97,4 +97,18 @@ export function formatDateShort(dateStr) {
 
 export function isSameDay(d1, d2) {
   return d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate();
+}
+
+// Parse event date correctly - all-day events come as "YYYY-MM-DD" which
+// JavaScript interprets as UTC midnight, shifting the day in negative timezones.
+// This function parses dates correctly for local timezone.
+export function parseEventDate(dateStr) {
+  if (!dateStr) return new Date();
+  // All-day event: "2026-04-25" (no T, no time)
+  if (dateStr.length === 10 && dateStr.includes("-")) {
+    const [y, m, d] = dateStr.split("-").map(Number);
+    return new Date(y, m - 1, d);
+  }
+  // Regular event with time: "2026-04-25T13:00:00-03:00"
+  return new Date(dateStr);
 }
