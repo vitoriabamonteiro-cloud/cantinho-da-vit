@@ -97,7 +97,7 @@ function getSubjectProgress(s) {
 }
 
 /* ─── Agenda Page ─── */
-function AgendaPage({ accessToken }) {
+function AgendaPage({ accessToken, onReconnect }) {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [viewDate, setViewDate] = useState(new Date());
@@ -131,14 +131,14 @@ function AgendaPage({ accessToken }) {
     });
   };
 
-  if (!accessToken) return <EmptyState icon="📅" text="Reconecte sua conta Google para ver sua agenda" />;
+  if (!accessToken) return (<div style={{ textAlign: "center", padding: "40px 20px" }}><EmptyState icon="📅" text="Reconecte sua conta Google para ver sua agenda" /><Btn onClick={onReconnect} style={{ marginTop: 12 }}>🔄 Reconectar Agenda</Btn></div>);
 
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
         <Btn onClick={prevMonth} variant="secondary" small>◀ Anterior</Btn>
         <h3 style={{ margin: 0, color: palette.text, fontFamily: font, fontSize: 18, fontWeight: 800, textTransform: "capitalize" }}>{monthName}</h3>
-        <Btn onClick={nextMonth} variant="secondary" small>Próximo ▶</Btn>
+        <div style={{ display: "flex", gap: 8 }}><Btn onClick={onReconnect} variant="ghost" small>🔄</Btn><Btn onClick={nextMonth} variant="secondary" small>Próximo ▶</Btn></div>
       </div>
       {loading ? (
         <div style={{ textAlign: "center", padding: 40, fontFamily: font, color: palette.textMuted }}>
@@ -196,7 +196,7 @@ function AgendaPage({ accessToken }) {
 }
 
 /* ─── Week Events Widget (Home) ─── */
-function WeekEventsWidget({ accessToken }) {
+function WeekEventsWidget({ accessToken, onReconnect }) {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -211,7 +211,8 @@ function WeekEventsWidget({ accessToken }) {
 
   if (!accessToken) return (
     <Card><h4 style={{ margin: "0 0 10px 0", fontFamily: font, color: palette.text, fontSize: 15 }}>📅 Agenda da Semana</h4>
-      <div style={{ fontFamily: font, color: palette.textMuted, fontSize: 13, textAlign: "center", padding: 12 }}>Faça logout e login novamente para conectar o calendário 🌙</div></Card>
+      <div style={{ fontFamily: font, color: palette.textMuted, fontSize: 13, textAlign: "center", padding: 12 }}>Agenda desconectada</div>
+      <div style={{ textAlign: "center", marginTop: 8 }}><Btn onClick={onReconnect} small>🔄 Reconectar Agenda</Btn></div></Card>
   );
 
   if (loading) return (
@@ -426,7 +427,7 @@ function LinksPage({ links, setLinks }) {
 }
 
 /* ─── Home ─── */
-function HomePage({ inglesData, books, posData, cursosData, accessToken }) {
+function HomePage({ inglesData, books, posData, cursosData, accessToken, onReconnect }) {
   const now = new Date(); const hour = now.getHours();
   const greeting = hour < 12 ? "Bom dia" : hour < 18 ? "Boa tarde" : "Boa noite";
   const posSubjects = posData.subjects || [];
@@ -446,7 +447,7 @@ function HomePage({ inglesData, books, posData, cursosData, accessToken }) {
         <Card><h4 style={{ margin: "0 0 14px 0", fontFamily: font, color: palette.text, fontSize: 15 }}>🎓 Pendentes</h4>{pendingSubjects.length === 0 ? <div style={{ fontFamily: font, color: palette.textMuted, fontSize: 13, textAlign: "center", padding: 16 }}>Tudo concluído! 🎉</div> : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{pendingSubjects.slice(0,5).map(s => (<div key={s.id} style={{ background: palette.bg, borderRadius: 12, padding: "10px 14px" }}><div style={{ fontFamily: font, fontSize: 13, fontWeight: 600, color: palette.text, marginBottom: 6 }}>{s.name}</div><ProgressBar percent={getSubjectProgress(s)} size="small" /></div>))}</div>}</Card>
         <Card><h4 style={{ margin: "0 0 14px 0", fontFamily: font, color: palette.text, fontSize: 15 }}>📖 Lendo Agora</h4>{readingBooks.length === 0 ? <div style={{ fontFamily: font, color: palette.textMuted, fontSize: 13, textAlign: "center", padding: 16 }}>Nenhum livro 🌙</div> : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{readingBooks.map(b => (<div key={b.id} style={{ background: palette.bg, borderRadius: 12, padding: "10px 14px" }}><div style={{ fontFamily: font, fontSize: 13, fontWeight: 600, color: palette.text }}>{b.title}</div>{b.author && <div style={{ fontFamily: font, fontSize: 11, color: palette.textMuted }}>{b.author}</div>}</div>))}</div>}</Card>
       </div>
-      <WeekEventsWidget accessToken={accessToken} />
+      <WeekEventsWidget accessToken={accessToken} onReconnect={onReconnect} />
     </div>
   );
 }
@@ -537,6 +538,17 @@ export default function App() {
 
   const handleLogin = (u, token) => { setUser(u); setAccessToken(token); };
   const handleLogout = async () => { await signOut(auth); setUser(null); setAccessToken(""); sessionStorage.removeItem("vit-gcal-token"); setLoaded(false); };
+  const handleReconnect = async () => {
+    try {
+      sessionStorage.removeItem("vit-gcal-token");
+      await signOut(auth);
+      const result = await signInWithPopup(auth, googleProvider);
+      const token = result._tokenResponse?.oauthAccessToken || "";
+      if (token) sessionStorage.setItem("vit-gcal-token", token);
+      setUser(result.user);
+      setAccessToken(token);
+    } catch (e) { console.error("Reconnect error:", e); }
+  };
 
   const currentPage = PAGES.find(p => p.id === page);
 
@@ -560,8 +572,8 @@ export default function App() {
       <div style={{ flex: 1, padding: "28px 36px", maxWidth: 900, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}><button onClick={() => setSidebarOpen(!sidebarOpen)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 20, color: palette.textMuted, padding: "4px 8px", borderRadius: 8 }}>{sidebarOpen ? "◀" : "☰"}</button><h2 style={{ margin: 0, fontFamily: font, color: palette.text, fontSize: 22, fontWeight: 800 }}>{currentPage?.icon} {currentPage?.label}</h2></div>
         <div style={{ animation: "fadeIn 0.25s ease" }}>
-          {page === "home" && <HomePage inglesData={inglesData} books={books} posData={posData} cursosData={cursosData} accessToken={accessToken} />}
-          {page === "agenda" && <AgendaPage accessToken={accessToken} />}
+          {page === "home" && <HomePage inglesData={inglesData} books={books} posData={posData} cursosData={cursosData} accessToken={accessToken} onReconnect={handleReconnect} />}
+          {page === "agenda" && <AgendaPage accessToken={accessToken} onReconnect={handleReconnect} />}
           {page === "pos" && <PosPage data={posData} setData={setPosData} />}
           {page === "ingles" && <SimpleStudyPage data={inglesData} setData={setInglesData} />}
           {page === "cursos" && <CursosPage data={cursosData} setData={setCursosData} />}
