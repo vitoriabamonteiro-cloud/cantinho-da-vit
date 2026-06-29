@@ -7,7 +7,6 @@ import { fetchAllEvents, getWeekRange, getMonthRange, formatTime, formatDateShor
 const PAGES = [
   { id: "home", label: "Home", icon: "🏠" },
   { id: "agenda", label: "Agenda", icon: "📅" },
-  { id: "pos", label: "Pós-Graduação", icon: "🎓" },
   { id: "ingles", label: "Inglês", icon: "🇺🇸" },
   { id: "cursos", label: "Cursos Livres", icon: "📚" },
   { id: "biblioteca", label: "Biblioteca", icon: "📖" },
@@ -75,25 +74,18 @@ function DeleteBtn({ onClick }) {
   return <button onClick={onClick} title="Excluir" style={{ background: "none", border: "none", cursor: "pointer", fontSize: 15, color: palette.textMuted, padding: "4px 6px", borderRadius: 8, transition: "all 0.2s", opacity: 0.5, flexShrink: 0 }} onMouseEnter={e => { e.target.style.opacity = 1; e.target.style.color = palette.dangerDark; }} onMouseLeave={e => { e.target.style.opacity = 0.5; e.target.style.color = palette.textMuted; }}>🗑️</button>;
 }
 
-function ProgressBar({ percent, size = "normal" }) {
+function ProgressBar({ percent, size = "normal", color }) {
   const h = size === "small" ? 8 : 14;
+  const gradientEnd = color || palette.pinkDark;
+  const gradientStart = color ? color + "bb" : palette.lilacDark;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, width: "100%" }}>
       <div style={{ flex: 1, height: h, background: palette.border, borderRadius: h, overflow: "hidden" }}>
-        <div style={{ height: "100%", width: `${percent}%`, background: `linear-gradient(90deg, ${palette.lilacDark}, ${palette.pinkDark})`, borderRadius: h, transition: "width 0.4s ease" }} />
+        <div style={{ height: "100%", width: `${Math.min(percent, 100)}%`, background: `linear-gradient(90deg, ${gradientStart}, ${gradientEnd})`, borderRadius: h, transition: "width 0.4s ease" }} />
       </div>
-      <span style={{ fontFamily: font, fontSize: size === "small" ? 11 : 13, fontWeight: 700, color: percent === 100 ? palette.greenDark : palette.textLight, minWidth: 40, textAlign: "right" }}>{Math.round(percent)}%</span>
+      <span style={{ fontFamily: font, fontSize: size === "small" ? 11 : 13, fontWeight: 700, color: percent >= 100 ? palette.greenDark : palette.textLight, minWidth: 40, textAlign: "right" }}>{Math.round(percent)}%</span>
     </div>
   );
-}
-
-function getSubjectProgress(s) {
-  const totalVideos = s.classes.reduce((a, c) => a + c.videos.length, 0);
-  const doneVideos = s.classes.reduce((a, c) => a + c.videos.filter(v => v.done).length, 0);
-  const hasExam = s.hasExam !== false;
-  const totalItems = totalVideos + (hasExam ? 1 : 0);
-  const doneItems = doneVideos + (hasExam && s.examDone ? 1 : 0);
-  return totalItems > 0 ? (doneItems / totalItems) * 100 : 0;
 }
 
 /* ─── Agenda Page ─── */
@@ -255,55 +247,210 @@ function WeekEventsWidget({ accessToken, onReconnect }) {
   );
 }
 
-/* ─── Inglês Page ─── */
-function SimpleStudyPage({ data, setData }) {
-  const [tab, setTab] = useState("notes");
-  const [modal, setModal] = useState(null);
-  const [form, setForm] = useState({});
-  const tabs = [{ id: "notes", label: "Anotações", icon: "📝" }, { id: "schedule", label: "Cronograma", icon: "📅" }, { id: "links", label: "Links & Materiais", icon: "🔗" }];
-  const save = (field, items) => setData({ ...data, [field]: items });
-  const addItem = () => {
-    if (tab === "notes" && form.title) save("notes", [...data.notes, { id: uid(), title: form.title, content: form.content || "", date: new Date().toLocaleDateString("pt-BR") }]);
-    else if (tab === "schedule" && form.title) save("schedule", [...data.schedule, { id: uid(), title: form.title, date: form.date || "", done: false }]);
-    else if (tab === "links" && form.title) save("links", [...data.links, { id: uid(), title: form.title, url: form.url || "", tag: form.tag || "" }]);
-    setForm({}); setModal(null);
+/* ─── Inglês Page — Voxy Tracker ─── */
+const VOXY_META_MINUTES = 36 * 60; // 2160 min = 36h
+
+function InglesPage({ data, setData }) {
+  const [modal, setModal] = useState(false);
+  const [form, setForm] = useState({ date: "", minutes: "" });
+  const [formError, setFormError] = useState("");
+
+  const sessions = data.sessions || [];
+
+  // totais
+  const totalMinutes = sessions.reduce((a, s) => a + s.minutes, 0);
+  const totalHours = Math.floor(totalMinutes / 60);
+  const totalMins = totalMinutes % 60;
+  const remainingMinutes = Math.max(VOXY_META_MINUTES - totalMinutes, 0);
+  const remainingHours = Math.floor(remainingMinutes / 60);
+  const remainingMins = remainingMinutes % 60;
+  const percent = Math.min((totalMinutes / VOXY_META_MINUTES) * 100, 100);
+  const done = totalMinutes >= VOXY_META_MINUTES;
+
+  // previsão: média dos últimos 7 dias ou média geral
+  const sessionsCount = sessions.length;
+  const avgPerSession = sessionsCount > 0 ? totalMinutes / sessionsCount : 0;
+  const sessionsNeeded = avgPerSession > 0 ? Math.ceil(remainingMinutes / avgPerSession) : null;
+
+  const addSession = () => {
+    setFormError("");
+    if (!form.date) { setFormError("Informe a data da aula."); return; }
+    const mins = parseInt(form.minutes);
+    if (!mins || mins < 30 || mins > 60) { setFormError("Informe um tempo entre 30 e 60 minutos."); return; }
+    const newSessions = [...sessions, { id: uid(), date: form.date, minutes: mins }]
+      .sort((a, b) => new Date(b.date) - new Date(a.date));
+    setData({ ...data, sessions: newSessions });
+    setForm({ date: "", minutes: "" });
+    setModal(false);
   };
-  const deleteItem = (field, id) => save(field, data[field].filter(i => i.id !== id));
-  const toggleDone = (id) => save("schedule", data.schedule.map(i => i.id === id ? { ...i, done: !i.done } : i));
+
+  const deleteSession = (id) => {
+    setData({ ...data, sessions: sessions.filter(s => s.id !== id) });
+  };
+
+  const formatDate = (iso) => {
+    if (!iso) return "";
+    const [y, m, d] = iso.split("-");
+    return `${d}/${m}/${y}`;
+  };
+
+  const todayIso = new Date().toISOString().split("T")[0];
+
+  // agrupa sessões por mês para o histórico
+  const grouped = {};
+  sessions.forEach(s => {
+    const [y, m] = s.date.split("-");
+    const key = `${y}-${m}`;
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(s);
+  });
+
+  const monthLabel = (key) => {
+    const [y, m] = key.split("-");
+    return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+  };
 
   return (
     <div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>{tabs.map(t => (<button key={t.id} onClick={() => setTab(t.id)} style={{ fontFamily: font, border: "none", cursor: "pointer", fontWeight: 600, borderRadius: 14, padding: "10px 18px", fontSize: 14, background: tab === t.id ? palette.lilacDark : palette.lilac, color: tab === t.id ? "#fff" : palette.text, transition: "all 0.2s" }}>{t.icon} {t.label}</button>))}</div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}><h3 style={{ margin: 0, color: palette.text, fontFamily: font, fontSize: 17 }}>{tabs.find(t => t.id === tab)?.icon} {tabs.find(t => t.id === tab)?.label}</h3><Btn onClick={() => setModal("add")} small>＋ Adicionar</Btn></div>
-      {tab === "notes" && (data.notes.length === 0 ? <EmptyState icon="📝" text="Nenhuma anotação ainda..." /> : <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{data.notes.map(n => (<Card key={n.id}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}><div><div style={{ fontWeight: 700, color: palette.text, fontFamily: font, fontSize: 15 }}>{n.title}</div><div style={{ color: palette.textMuted, fontSize: 12, marginTop: 2, fontFamily: font }}>{n.date}</div>{n.content && <div style={{ color: palette.textLight, fontSize: 14, marginTop: 8, fontFamily: font, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{n.content}</div>}</div><DeleteBtn onClick={() => deleteItem("notes", n.id)} /></div></Card>))}</div>)}
-      {tab === "schedule" && (data.schedule.length === 0 ? <EmptyState icon="📅" text="Cronograma vazio..." /> : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{data.schedule.map(s => (<Card key={s.id} style={{ padding: "14px 20px" }}><div style={{ display: "flex", alignItems: "center", gap: 12 }}><button onClick={() => toggleDone(s.id)} style={{ width: 26, height: 26, borderRadius: 8, border: `2px solid ${s.done ? palette.lilacDark : palette.border}`, background: s.done ? palette.lilacDark : "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, color: "#fff", transition: "all 0.2s", flexShrink: 0 }}>{s.done ? "✓" : ""}</button><div style={{ flex: 1 }}><div style={{ fontWeight: 600, color: palette.text, fontFamily: font, fontSize: 14, textDecoration: s.done ? "line-through" : "none", opacity: s.done ? 0.5 : 1 }}>{s.title}</div>{s.date && <div style={{ color: palette.textMuted, fontSize: 12, fontFamily: font, marginTop: 2 }}>{s.date}</div>}</div><DeleteBtn onClick={() => deleteItem("schedule", s.id)} /></div></Card>))}</div>)}
-      {tab === "links" && (data.links.length === 0 ? <EmptyState icon="🔗" text="Nenhum link salvo..." /> : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{data.links.map(l => (<Card key={l.id} style={{ padding: "14px 20px" }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><div><div style={{ fontWeight: 600, color: palette.text, fontFamily: font, fontSize: 14 }}>{l.title}</div>{l.url && <div style={{ fontSize: 12, color: palette.blueDark, fontFamily: font, marginTop: 2, wordBreak: "break-all" }}>{l.url}</div>}{l.tag && <span style={{ display: "inline-block", marginTop: 6, background: palette.pink, color: palette.text, fontFamily: font, fontSize: 11, fontWeight: 600, borderRadius: 8, padding: "3px 10px" }}>{l.tag}</span>}</div><DeleteBtn onClick={() => deleteItem("links", l.id)} /></div></Card>))}</div>)}
-      <Modal open={modal === "add"} onClose={() => { setModal(null); setForm({}); }} title={`Adicionar ${tabs.find(t => t.id === tab)?.label}`}><div style={{ display: "flex", flexDirection: "column", gap: 12 }}><Input value={form.title || ""} onChange={v => setForm({ ...form, title: v })} placeholder="Título" />{tab === "notes" && <Input value={form.content || ""} onChange={v => setForm({ ...form, content: v })} placeholder="Conteúdo..." multiline />}{tab === "schedule" && <Input value={form.date || ""} onChange={v => setForm({ ...form, date: v })} placeholder="Data (ex: 20/04/2026)" />}{tab === "links" && (<><Input value={form.url || ""} onChange={v => setForm({ ...form, url: v })} placeholder="URL" /><Input value={form.tag || ""} onChange={v => setForm({ ...form, tag: v })} placeholder="Tag" /></>)}<Btn onClick={addItem} style={{ marginTop: 4, alignSelf: "flex-end" }}>Salvar 💜</Btn></div></Modal>
-    </div>
-  );
-}
+      {/* Hero card de progresso */}
+      <Card style={{ marginBottom: 20, background: done ? "linear-gradient(135deg, #a7f3d0, #6ee7b7)" : "linear-gradient(135deg, #ede9fe, #fce7f3)", padding: "28px 28px 24px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
+          <div>
+            <div style={{ fontFamily: font, fontSize: 13, fontWeight: 700, color: done ? "#065f46" : palette.textMuted, marginBottom: 4, letterSpacing: 0.5 }}>
+              {done ? "🎉 META ATINGIDA!" : "🇺🇸 Progresso Voxy — Isenção"}
+            </div>
+            <div style={{ fontFamily: font, fontSize: 42, fontWeight: 800, color: done ? "#064e3b" : palette.text, lineHeight: 1 }}>
+              {totalHours}h{totalMins > 0 ? ` ${totalMins}min` : ""}
+            </div>
+            <div style={{ fontFamily: font, fontSize: 14, color: done ? "#065f46" : palette.textLight, marginTop: 4 }}>
+              {done ? "Você completou as 36h! 🏆" : `Faltam ${remainingHours}h${remainingMins > 0 ? ` ${remainingMins}min` : ""} para as 36h`}
+            </div>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontFamily: font, fontSize: 13, color: done ? "#065f46" : palette.textMuted }}>Meta</div>
+            <div style={{ fontFamily: font, fontSize: 22, fontWeight: 800, color: done ? "#064e3b" : palette.text }}>36h</div>
+            <div style={{ fontFamily: font, fontSize: 12, color: done ? "#065f46" : palette.textMuted, marginTop: 2 }}>{sessions.length} {sessions.length === 1 ? "sessão" : "sessões"}</div>
+          </div>
+        </div>
+        <div style={{ marginTop: 20 }}>
+          <ProgressBar percent={percent} />
+        </div>
+        {!done && sessionsNeeded && avgPerSession >= 30 && (
+          <div style={{ fontFamily: font, fontSize: 12, color: palette.textMuted, marginTop: 10, display: "flex", alignItems: "center", gap: 6 }}>
+            <span>📊</span>
+            <span>Na sua média atual de {Math.round(avgPerSession)}min/sessão, você precisa de mais <strong style={{ color: palette.textLight }}>{sessionsNeeded} {sessionsNeeded === 1 ? "sessão" : "sessões"}</strong> para concluir.</span>
+          </div>
+        )}
+      </Card>
 
-/* ─── Pós-Graduação Page ─── */
-function PosPage({ data, setData }) {
-  const [modal, setModal] = useState(null); const [form, setForm] = useState({}); const [expandedSubject, setExpandedSubject] = useState(null);
-  const subjects = data.subjects || [];
-  const addSubject = () => { if (!form.name) return; setData({ ...data, subjects: [...subjects, { id: uid(), name: form.name, classes: [1,2,3].map(c => ({ id: uid(), name: `Aula ${c}`, videos: [1,2,3,4].map(v => ({ id: uid(), name: `Vídeo ${v}`, done: false })) })), examDone: false, hasExam: true }] }); setForm({}); setModal(null); };
-  const toggleVideo = (sid, cid, vid) => setData({ ...data, subjects: subjects.map(s => s.id !== sid ? s : { ...s, classes: s.classes.map(c => c.id !== cid ? c : { ...c, videos: c.videos.map(v => v.id !== vid ? v : { ...v, done: !v.done }) }) }) });
-  const toggleExam = (sid) => setData({ ...data, subjects: subjects.map(s => s.id !== sid ? s : { ...s, examDone: !s.examDone }) });
-  const deleteSubject = (id) => setData({ ...data, subjects: subjects.filter(s => s.id !== id) });
-  const getTotalProgress = () => subjects.length === 0 ? 0 : subjects.reduce((a, s) => a + getSubjectProgress(s), 0) / subjects.length;
+      {/* Minigrid de stats */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 20 }}>
+        {[
+          { icon: "⏱️", label: "Total estudado", value: `${totalHours}h ${totalMins}min` },
+          { icon: "📅", label: "Sessões registradas", value: sessions.length },
+          { icon: "⌛", label: "Média por sessão", value: sessionsCount > 0 ? `${Math.round(avgPerSession)}min` : "—" },
+        ].map(s => (
+          <Card key={s.label} style={{ padding: "16px", textAlign: "center" }}>
+            <div style={{ fontSize: 22 }}>{s.icon}</div>
+            <div style={{ fontFamily: font, fontSize: 16, fontWeight: 800, color: palette.text, marginTop: 4 }}>{s.value}</div>
+            <div style={{ fontFamily: font, fontSize: 11, color: palette.textMuted, fontWeight: 600, marginTop: 2 }}>{s.label}</div>
+          </Card>
+        ))}
+      </div>
 
-  return (
-    <div>
-      {subjects.length > 0 && <Card style={{ marginBottom: 20, background: "linear-gradient(135deg, #ede9fe, #fce7f3)" }}><div style={{ fontFamily: font, fontSize: 14, fontWeight: 700, color: palette.text, marginBottom: 8 }}>📊 Progresso Geral da Pós</div><ProgressBar percent={getTotalProgress()} /></Card>}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}><h3 style={{ margin: 0, color: palette.text, fontFamily: font, fontSize: 17 }}>🎓 Matérias</h3><Btn onClick={() => setModal("add")} small>＋ Nova Matéria</Btn></div>
-      {subjects.length === 0 ? <EmptyState icon="🎓" text="Nenhuma matéria cadastrada ainda..." /> :
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>{subjects.map(s => { const progress = getSubjectProgress(s); const isOpen = expandedSubject === s.id; return (
-          <Card key={s.id}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><div style={{ cursor: "pointer", flex: 1 }} onClick={() => setExpandedSubject(isOpen ? null : s.id)}><div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 12, transition: "transform 0.2s", display: "inline-block", transform: isOpen ? "rotate(90deg)" : "rotate(0)" }}>▶</span><div style={{ fontWeight: 700, color: palette.text, fontFamily: font, fontSize: 15 }}>{s.name}</div>{progress === 100 && <span style={{ fontSize: 14 }}>✅</span>}</div><div style={{ marginTop: 8, maxWidth: 400 }}><ProgressBar percent={progress} size="small" /></div></div><DeleteBtn onClick={() => deleteSubject(s.id)} /></div>
-            {isOpen && (<div style={{ marginTop: 16, paddingLeft: 8 }}>{s.classes.map(c => { const cd = c.videos.filter(v => v.done).length; return (<div key={c.id} style={{ marginBottom: 14 }}><div style={{ fontFamily: font, fontSize: 13, fontWeight: 700, color: palette.textLight, marginBottom: 6 }}>📘 {c.name} <span style={{ fontWeight: 500, color: palette.textMuted }}>({cd}/{c.videos.length})</span></div><div style={{ display: "flex", flexWrap: "wrap", gap: 6, paddingLeft: 8 }}>{c.videos.map(v => (<button key={v.id} onClick={() => toggleVideo(s.id, c.id, v.id)} style={{ fontFamily: font, border: `2px solid ${v.done ? palette.greenDark : palette.border}`, borderRadius: 10, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", background: v.done ? palette.green : "#fff", color: v.done ? palette.greenDark : palette.textMuted, transition: "all 0.2s" }}>{v.done ? "✓ " : ""}{v.name}</button>))}</div></div>); })}{s.hasExam !== false && (<div style={{ marginTop: 8, borderTop: `1px solid ${palette.border}`, paddingTop: 12, display: "flex", alignItems: "center", gap: 10 }}><button onClick={() => toggleExam(s.id)} style={{ fontFamily: font, border: `2px solid ${s.examDone ? palette.greenDark : palette.border}`, borderRadius: 12, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer", background: s.examDone ? palette.green : "#fff", color: s.examDone ? palette.greenDark : palette.textMuted, transition: "all 0.2s", display: "flex", alignItems: "center", gap: 6 }}>{s.examDone ? "✅" : "📝"} Prova {s.examDone ? "(Concluída)" : "(Pendente)"}</button>{s.tccNote && <span style={{ fontFamily: font, fontSize: 13, fontWeight: 700, color: palette.lilacDeep, background: palette.lilac, borderRadius: 10, padding: "5px 12px" }}>⭐ Nota: {s.tccNote}</span>}</div>)}</div>)}
-          </Card>); })}</div>}
-      <Modal open={modal === "add"} onClose={() => { setModal(null); setForm({}); }} title="Nova Matéria"><div style={{ display: "flex", flexDirection: "column", gap: 12 }}><Input value={form.name || ""} onChange={v => setForm({ ...form, name: v })} placeholder="Nome da matéria" /><div style={{ fontFamily: font, fontSize: 12, color: palette.textMuted, background: palette.bg, borderRadius: 10, padding: "10px 14px" }}>ℹ️ 3 aulas × 4 vídeos + 1 prova</div><Btn onClick={addSubject} style={{ alignSelf: "flex-end" }}>Adicionar 🎓</Btn></div></Modal>
+      {/* Histórico */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+        <h3 style={{ margin: 0, color: palette.text, fontFamily: font, fontSize: 17 }}>📋 Histórico de aulas</h3>
+        <Btn onClick={() => { setForm({ date: todayIso, minutes: "" }); setFormError(""); setModal(true); }} small>＋ Registrar aula</Btn>
+      </div>
+
+      {sessions.length === 0 ? (
+        <EmptyState icon="🎧" text="Nenhuma aula registrada ainda. Que tal começar agora?" />
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {Object.entries(grouped).sort((a, b) => b[0].localeCompare(a[0])).map(([key, items]) => {
+            const monthTotal = items.reduce((a, s) => a + s.minutes, 0);
+            const mh = Math.floor(monthTotal / 60);
+            const mm = monthTotal % 60;
+            return (
+              <div key={key}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <div style={{ fontFamily: font, fontSize: 13, fontWeight: 700, color: palette.lilacDeep, textTransform: "capitalize" }}>
+                    {monthLabel(key)}
+                  </div>
+                  <div style={{ fontFamily: font, fontSize: 12, color: palette.textMuted, background: palette.lilac, borderRadius: 8, padding: "3px 10px", fontWeight: 600 }}>
+                    {mh}h{mm > 0 ? ` ${mm}min` : ""} neste mês
+                  </div>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {items.map(s => (
+                    <Card key={s.id} style={{ padding: "14px 20px" }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                          <div style={{ background: "linear-gradient(135deg, #ede9fe, #fce7f3)", borderRadius: 12, padding: "10px 14px", textAlign: "center", minWidth: 56 }}>
+                            <div style={{ fontFamily: font, fontSize: 18, fontWeight: 800, color: palette.lilacDeep, lineHeight: 1 }}>{s.minutes}</div>
+                            <div style={{ fontFamily: font, fontSize: 10, color: palette.textMuted, fontWeight: 600 }}>min</div>
+                          </div>
+                          <div>
+                            <div style={{ fontFamily: font, fontSize: 14, fontWeight: 700, color: palette.text }}>
+                              {s.minutes >= 60 ? "1h de aula" : `${s.minutes}min de aula`}
+                            </div>
+                            <div style={{ fontFamily: font, fontSize: 12, color: palette.textMuted, marginTop: 2 }}>
+                              📅 {formatDate(s.date)}
+                            </div>
+                          </div>
+                        </div>
+                        <DeleteBtn onClick={() => deleteSession(s.id)} />
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Modal de registro */}
+      <Modal open={modal} onClose={() => setModal(false)} title="Registrar aula Voxy 🇺🇸">
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div>
+            <div style={{ fontFamily: font, fontSize: 13, fontWeight: 700, color: palette.text, marginBottom: 6 }}>📅 Data da aula</div>
+            <input
+              type="date"
+              value={form.date}
+              max={todayIso}
+              onChange={e => setForm({ ...form, date: e.target.value })}
+              style={{ fontFamily: font, border: `2px solid ${palette.border}`, borderRadius: 12, padding: "10px 14px", fontSize: 14, width: "100%", boxSizing: "border-box", outline: "none", color: palette.text, background: palette.bg }}
+            />
+          </div>
+          <div>
+            <div style={{ fontFamily: font, fontSize: 13, fontWeight: 700, color: palette.text, marginBottom: 6 }}>⏱️ Tempo de estudo</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              {[30, 45, 60].map(m => (
+                <button
+                  key={m}
+                  onClick={() => setForm({ ...form, minutes: String(m) })}
+                  style={{
+                    flex: 1, fontFamily: font, fontWeight: 700, fontSize: 15, cursor: "pointer", borderRadius: 12, padding: "12px 8px",
+                    border: `2px solid ${form.minutes === String(m) ? palette.lilacDark : palette.border}`,
+                    background: form.minutes === String(m) ? palette.lilac : "#fff",
+                    color: form.minutes === String(m) ? palette.lilacDeep : palette.textMuted,
+                    transition: "all 0.15s"
+                  }}
+                >
+                  {m === 60 ? "1h" : `${m}min`}
+                </button>
+              ))}
+            </div>
+            <div style={{ fontFamily: font, fontSize: 11, color: palette.textMuted, marginTop: 6 }}>Mínimo: 30min · Máximo: 1h por sessão</div>
+          </div>
+          {formError && (
+            <div style={{ fontFamily: font, fontSize: 13, color: palette.dangerDark, background: palette.danger + "44", borderRadius: 10, padding: "8px 14px" }}>{formError}</div>
+          )}
+          <Btn onClick={addSession} style={{ alignSelf: "flex-end", marginTop: 4 }}>Salvar aula 💜</Btn>
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -367,7 +514,6 @@ function LibraryPage({ books, setBooks }) {
 
   return (
     <div>
-      {/* Stats bar */}
       {books.length > 0 && (
         <Card style={{ marginBottom: 20, background: "linear-gradient(135deg, #ede9fe, #fce7f3)", padding: "16px 24px" }}>
           <div style={{ display: "flex", gap: 24, flexWrap: "wrap", justifyContent: "center" }}>
@@ -398,9 +544,7 @@ function LibraryPage({ books, setBooks }) {
             <button onClick={() => cycleStatus(b.id)} style={{ display: "inline-block", marginTop: 10, background: st.color, color: palette.text, fontFamily: font, fontSize: 12, fontWeight: 700, borderRadius: 10, padding: "5px 12px", border: "none", cursor: "pointer" }}>{st.icon} {st.label}</button>
             {b.status === "lido" && (<div style={{ marginTop: 8 }}>{[1,2,3,4,5].map(star => (<span key={star} onClick={() => setRating(b.id, star)} style={{ cursor: "pointer", fontSize: 18, filter: star <= b.rating ? "none" : "grayscale(1) opacity(0.3)" }}>⭐</span>))}</div>)}
           </Card>); })}</div>}
-      {/* Add Modal */}
       <Modal open={modal === "add"} onClose={() => { setModal(null); setForm({}); }} title="Adicionar Livro"><div style={{ display: "flex", flexDirection: "column", gap: 12 }}>{bookFormFields}<Btn onClick={addBook} style={{ marginTop: 4, alignSelf: "flex-end" }}>Salvar 📖</Btn></div></Modal>
-      {/* Edit Modal */}
       <Modal open={modal === "edit"} onClose={() => { setModal(null); setForm({}); }} title="Editar Livro"><div style={{ display: "flex", flexDirection: "column", gap: 12 }}>{bookFormFields}<Btn onClick={editBook} style={{ marginTop: 4, alignSelf: "flex-end" }}>Atualizar 📖</Btn></div></Modal>
     </div>
   );
@@ -427,36 +571,91 @@ function LinksPage({ links, setLinks }) {
 }
 
 /* ─── Home ─── */
-function HomePage({ inglesData, books, posData, cursosData, accessToken, onReconnect }) {
+function HomePage({ inglesData, books, cursosData, accessToken, onReconnect }) {
   const now = new Date(); const hour = now.getHours();
   const greeting = hour < 12 ? "Bom dia" : hour < 18 ? "Boa tarde" : "Boa noite";
-  const posSubjects = posData.subjects || [];
-  const posProgress = posSubjects.length > 0 ? posSubjects.reduce((a,s) => a+getSubjectProgress(s),0)/posSubjects.length : 0;
+
   const cursos = cursosData.courses || [];
   const cursosProgress = cursos.length > 0 ? cursos.reduce((a,c) => { const t=c.modules.reduce((x,m)=>x+m.lessons.length,0); const d=c.modules.reduce((x,m)=>x+m.lessons.filter(l=>l.done).length,0); return a+(t>0?(d/t)*100:0); },0)/cursos.length : 0;
-  const doneSchedule = inglesData.schedule.filter(s => s.done).length;
-  const stats = [{ icon: "🎓", label: "Pós", value: `${Math.round(posProgress)}%`, color: palette.lilac },{ icon: "📚", label: "Cursos", value: `${Math.round(cursosProgress)}%`, color: palette.blue },{ icon: "📅", label: "Inglês", value: `${doneSchedule}/${inglesData.schedule.length}`, color: palette.pink },{ icon: "📖", label: "Livros", value: books.length, color: "#dbeafe" }];
-  const pendingSubjects = posSubjects.filter(s => getSubjectProgress(s) < 100);
+
+  const sessions = inglesData.sessions || [];
+  const totalMinutes = sessions.reduce((a, s) => a + s.minutes, 0);
+  const inglesPercent = Math.min((totalMinutes / (36 * 60)) * 100, 100);
+  const inglesH = Math.floor(totalMinutes / 60);
+  const inglesMin = totalMinutes % 60;
+
   const readingBooks = books.filter(b => b.status === "lendo");
+
+  const stats = [
+    { icon: "🇺🇸", label: "Inglês (Voxy)", value: `${inglesH}h${inglesMin > 0 ? ` ${inglesMin}m` : ""}`, sub: `${Math.round(inglesPercent)}% das 36h`, color: palette.pink },
+    { icon: "📚", label: "Cursos", value: `${Math.round(cursosProgress)}%`, sub: `${cursos.length} ${cursos.length === 1 ? "curso" : "cursos"}`, color: palette.blue },
+    { icon: "📖", label: "Livros", value: books.filter(b=>b.status==="lido").length, sub: `${readingBooks.length} lendo agora`, color: "#dbeafe" },
+  ];
 
   return (
     <div>
-      <div style={{ background: "linear-gradient(135deg, #ddd6fe 0%, #fbcfe8 50%, #bfdbfe 100%)", borderRadius: 24, padding: "32px 28px", marginBottom: 24, position: "relative", overflow: "hidden" }}><div style={{ position: "absolute", top: -20, right: -10, fontSize: 80, opacity: 0.15, transform: "rotate(15deg)" }}>✨</div><div style={{ fontFamily: font, fontSize: 28, fontWeight: 800, color: palette.text }}>{greeting}, Vit! 💜</div><div style={{ fontFamily: font, fontSize: 15, color: palette.textLight, marginTop: 6 }}>{now.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</div></div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 24 }}>{stats.map(s => (<Card key={s.label} style={{ padding: "18px", textAlign: "center", background: s.color }}><div style={{ fontSize: 28 }}>{s.icon}</div><div style={{ fontFamily: font, fontSize: 22, fontWeight: 800, color: palette.text, marginTop: 4 }}>{s.value}</div><div style={{ fontFamily: font, fontSize: 12, color: palette.textLight, fontWeight: 600 }}>{s.label}</div></Card>))}</div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
-        <Card><h4 style={{ margin: "0 0 14px 0", fontFamily: font, color: palette.text, fontSize: 15 }}>🎓 Pendentes</h4>{pendingSubjects.length === 0 ? <div style={{ fontFamily: font, color: palette.textMuted, fontSize: 13, textAlign: "center", padding: 16 }}>Tudo concluído! 🎉</div> : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{pendingSubjects.slice(0,5).map(s => (<div key={s.id} style={{ background: palette.bg, borderRadius: 12, padding: "10px 14px" }}><div style={{ fontFamily: font, fontSize: 13, fontWeight: 600, color: palette.text, marginBottom: 6 }}>{s.name}</div><ProgressBar percent={getSubjectProgress(s)} size="small" /></div>))}</div>}</Card>
-        <Card><h4 style={{ margin: "0 0 14px 0", fontFamily: font, color: palette.text, fontSize: 15 }}>📖 Lendo Agora</h4>{readingBooks.length === 0 ? <div style={{ fontFamily: font, color: palette.textMuted, fontSize: 13, textAlign: "center", padding: 16 }}>Nenhum livro 🌙</div> : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{readingBooks.map(b => (<div key={b.id} style={{ background: palette.bg, borderRadius: 12, padding: "10px 14px" }}><div style={{ fontFamily: font, fontSize: 13, fontWeight: 600, color: palette.text }}>{b.title}</div>{b.author && <div style={{ fontFamily: font, fontSize: 11, color: palette.textMuted }}>{b.author}</div>}</div>))}</div>}</Card>
+      <div style={{ background: "linear-gradient(135deg, #ddd6fe 0%, #fbcfe8 50%, #bfdbfe 100%)", borderRadius: 24, padding: "32px 28px", marginBottom: 24, position: "relative", overflow: "hidden" }}>
+        <div style={{ position: "absolute", top: -20, right: -10, fontSize: 80, opacity: 0.15, transform: "rotate(15deg)" }}>✨</div>
+        <div style={{ fontFamily: font, fontSize: 28, fontWeight: 800, color: palette.text }}>{greeting}, Vit! 💜</div>
+        <div style={{ fontFamily: font, fontSize: 15, color: palette.textLight, marginTop: 6 }}>{now.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</div>
       </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 24 }}>
+        {stats.map(s => (
+          <Card key={s.label} style={{ padding: "18px", textAlign: "center", background: s.color }}>
+            <div style={{ fontSize: 28 }}>{s.icon}</div>
+            <div style={{ fontFamily: font, fontSize: 22, fontWeight: 800, color: palette.text, marginTop: 4 }}>{s.value}</div>
+            <div style={{ fontFamily: font, fontSize: 12, color: palette.textLight, fontWeight: 600 }}>{s.label}</div>
+            <div style={{ fontFamily: font, fontSize: 11, color: palette.textMuted, marginTop: 2 }}>{s.sub}</div>
+          </Card>
+        ))}
+      </div>
+
+      {/* Mini Voxy progress no home */}
+      <Card style={{ marginBottom: 16, padding: "18px 24px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <h4 style={{ margin: 0, fontFamily: font, color: palette.text, fontSize: 15 }}>🇺🇸 Progresso Voxy</h4>
+          <span style={{ fontFamily: font, fontSize: 12, color: palette.textMuted }}>{inglesH}h{inglesMin > 0 ? ` ${inglesMin}min` : ""} / 36h</span>
+        </div>
+        <ProgressBar percent={inglesPercent} />
+      </Card>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+        <Card>
+          <h4 style={{ margin: "0 0 14px 0", fontFamily: font, color: palette.text, fontSize: 15 }}>📖 Lendo Agora</h4>
+          {readingBooks.length === 0
+            ? <div style={{ fontFamily: font, color: palette.textMuted, fontSize: 13, textAlign: "center", padding: 16 }}>Nenhum livro 🌙</div>
+            : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{readingBooks.map(b => (
+                <div key={b.id} style={{ background: palette.bg, borderRadius: 12, padding: "10px 14px" }}>
+                  <div style={{ fontFamily: font, fontSize: 13, fontWeight: 600, color: palette.text }}>{b.title}</div>
+                  {b.author && <div style={{ fontFamily: font, fontSize: 11, color: palette.textMuted }}>{b.author}</div>}
+                </div>
+              ))}</div>
+          }
+        </Card>
+        <Card>
+          <h4 style={{ margin: "0 0 14px 0", fontFamily: font, color: palette.text, fontSize: 15 }}>📚 Cursos em andamento</h4>
+          {cursos.filter(c => { const t=c.modules.reduce((a,m)=>a+m.lessons.length,0); const d=c.modules.reduce((a,m)=>a+m.lessons.filter(l=>l.done).length,0); return t>0&&d<t; }).length === 0
+            ? <div style={{ fontFamily: font, color: palette.textMuted, fontSize: 13, textAlign: "center", padding: 16 }}>Tudo em dia! 🎉</div>
+            : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{cursos.filter(c => { const t=c.modules.reduce((a,m)=>a+m.lessons.length,0); const d=c.modules.reduce((a,m)=>a+m.lessons.filter(l=>l.done).length,0); return t>0&&d<t; }).slice(0,3).map(c => {
+                const t=c.modules.reduce((a,m)=>a+m.lessons.length,0); const d=c.modules.reduce((a,m)=>a+m.lessons.filter(l=>l.done).length,0); const p=t>0?(d/t)*100:0;
+                return (
+                  <div key={c.id} style={{ background: palette.bg, borderRadius: 12, padding: "10px 14px" }}>
+                    <div style={{ fontFamily: font, fontSize: 13, fontWeight: 600, color: palette.text, marginBottom: 6 }}>{c.name}</div>
+                    <ProgressBar percent={p} size="small" />
+                  </div>
+                );
+              })}</div>
+          }
+        </Card>
+      </div>
+
       <WeekEventsWidget accessToken={accessToken} onReconnect={onReconnect} />
     </div>
   );
 }
 
 /* ─── Pre-populated data ─── */
-const makeSubject = (name, allDone, examDone, hasExam = true) => ({ id: uid(), name, classes: [1,2,3].map(c => ({ id: uid(), name: `Aula ${c}`, videos: [1,2,3,4].map(v => ({ id: uid(), name: `Vídeo ${v}`, done: allDone })) })), examDone, hasExam });
-const makeConfigTrabalho = () => { const s = makeSubject("Configurações de trabalho: híbrido, remoto e presencial", false, false); s.classes[0].videos.forEach(v => v.done=true); s.classes[1].videos.forEach(v => v.done=true); s.classes[2].videos[0].done=true; s.classes[2].videos[1].done=true; s.classes[2].videos[2].done=true; return s; };
-const makeTCC = () => ({ id: uid(), name: "Aplicação do conhecimento: Prova Final e Preparo para o TCC", classes: [1,2,3].map(c => ({ id: uid(), name: `Aula ${c}`, videos: [1,2,3,4].map(v => ({ id: uid(), name: `Vídeo ${v}`, done: true })) })), examDone: true, hasExam: true, tccNote: "9,7" });
-const initialPosSubjects = () => [makeSubject("Saúde, bem-estar e engajamento no trabalho",true,true),makeSubject("Educação corporativa",true,true),makeSubject("Offboarding: Demissões, Mudanças e Aposentadoria",true,true),makeSubject("Empreendedorismo e Intraempreendedorismo no Trabalho",true,true),makeSubject("Gestão da Mudança e Comunicação Organizacional",true,true),makeSubject("Gestão de cargos e movimentação de pessoas",true,true),makeSubject("Atração, Seleção e Onboarding",true,true),makeSubject("Saúde mental e doenças no trabalho",true,true),makeSubject("Cultura e Clima Organizacional",true,true),makeSubject("Carreira e Propósito",true,true),makeSubject("Liderando equipes de alta performance",true,true),makeSubject("Gestão de Conflitos, Gestão de Crise e Tomada de Decisão",true,true),makeSubject("Gestão de Projetos e Metodologias Ágeis",true,true),makeSubject("Legislação Trabalhista e Relações de Trabalho",true,true),makeSubject("Gestão do Conhecimento e Inteligência Organizacional",true,true),makeSubject("Employer Branding: posicionamento e marca do empregador",true,true),makeSubject("Diversidade e Inclusão nas Organizações",true,true),makeSubject("Consultoria Interna de RH: Business Partner",true,true),makeSubject("Flow: criatividade e alta performance",true,true),makeConfigTrabalho(),makeSubject("People Analytics: análise de dados, indicadores, desempenho",false,false),makeSubject("Profissional Integral: consciência e transformação social",false,false,false),makeTCC()];
 const initialBooks = () => [
   { id: uid(), title: "Império da Tempestade - tomo 1", author: "Sarah J Maas", genre: "fantasia", status: "lido", rating: 5, pages: "", startDate: "30/12/2025", endDate: "08/01/2026" },
   { id: uid(), title: "Império da Tempestade - tomo 2", author: "Sarah J Maas", genre: "fantasia", status: "lido", rating: 5, pages: "", startDate: "08/01/2026", endDate: "12/01/2026" },
@@ -508,8 +707,7 @@ export default function App() {
   const [accessToken, setAccessToken] = useState(() => sessionStorage.getItem("vit-gcal-token") || "");
   const [authChecked, setAuthChecked] = useState(false);
   const [page, setPage] = useState("home");
-  const [inglesData, setInglesData] = useState({ notes: [], schedule: [], links: [] });
-  const [posData, setPosData] = useState({ subjects: [] });
+  const [inglesData, setInglesData] = useState({ sessions: [] });
   const [cursosData, setCursosData] = useState({ courses: [] });
   const [books, setBooks] = useState([]);
   const [linksData, setLinksData] = useState([]);
@@ -521,8 +719,11 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     (async () => {
-      const ig = await store.get("ingles"); if (ig) setInglesData(ig);
-      const po = await store.get("pos"); if (po && po.subjects && po.subjects.length > 0) setPosData(po); else setPosData({ subjects: initialPosSubjects() });
+      const ig = await store.get("ingles");
+      // Migração: se o formato antigo (notes/schedule/links) existir, inicializa sessions vazio
+      if (ig && ig.sessions) setInglesData(ig);
+      else setInglesData({ sessions: [] });
+
       const cu = await store.get("cursos"); if (cu) setCursosData(cu);
       const bk = await store.get("books"); if (bk && bk.length > 0) setBooks(bk); else setBooks(initialBooks());
       const lk = await store.get("links-uteis"); if (lk) setLinksData(lk);
@@ -531,7 +732,6 @@ export default function App() {
   }, [user]);
 
   useEffect(() => { if (loaded) store.set("ingles", inglesData); }, [inglesData, loaded]);
-  useEffect(() => { if (loaded) store.set("pos", posData); }, [posData, loaded]);
   useEffect(() => { if (loaded) store.set("cursos", cursosData); }, [cursosData, loaded]);
   useEffect(() => { if (loaded) store.set("books", books); }, [books, loaded]);
   useEffect(() => { if (loaded) store.set("links-uteis", linksData); }, [linksData, loaded]);
@@ -570,12 +770,14 @@ export default function App() {
         </div>
       )}
       <div style={{ flex: 1, padding: "28px 36px", maxWidth: 900, margin: "0 auto" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}><button onClick={() => setSidebarOpen(!sidebarOpen)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 20, color: palette.textMuted, padding: "4px 8px", borderRadius: 8 }}>{sidebarOpen ? "◀" : "☰"}</button><h2 style={{ margin: 0, fontFamily: font, color: palette.text, fontSize: 22, fontWeight: 800 }}>{currentPage?.icon} {currentPage?.label}</h2></div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
+          <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 20, color: palette.textMuted, padding: "4px 8px", borderRadius: 8 }}>{sidebarOpen ? "◀" : "☰"}</button>
+          <h2 style={{ margin: 0, fontFamily: font, color: palette.text, fontSize: 22, fontWeight: 800 }}>{currentPage?.icon} {currentPage?.label}</h2>
+        </div>
         <div style={{ animation: "fadeIn 0.25s ease" }}>
-          {page === "home" && <HomePage inglesData={inglesData} books={books} posData={posData} cursosData={cursosData} accessToken={accessToken} onReconnect={handleReconnect} />}
+          {page === "home" && <HomePage inglesData={inglesData} books={books} cursosData={cursosData} accessToken={accessToken} onReconnect={handleReconnect} />}
           {page === "agenda" && <AgendaPage accessToken={accessToken} onReconnect={handleReconnect} />}
-          {page === "pos" && <PosPage data={posData} setData={setPosData} />}
-          {page === "ingles" && <SimpleStudyPage data={inglesData} setData={setInglesData} />}
+          {page === "ingles" && <InglesPage data={inglesData} setData={setInglesData} />}
           {page === "cursos" && <CursosPage data={cursosData} setData={setCursosData} />}
           {page === "biblioteca" && <LibraryPage books={books} setBooks={setBooks} />}
           {page === "links" && <LinksPage links={linksData} setLinks={setLinksData} />}
