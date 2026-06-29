@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { store } from "./store";
 import { auth, googleProvider } from "./firebase";
 import { signInWithPopup, onAuthStateChanged, signOut } from "firebase/auth";
@@ -713,31 +713,38 @@ export default function App() {
   const [linksData, setLinksData] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Só permite salvar no Firebase DEPOIS que o carregamento inicial terminar.
+  // Sem isso, os useEffects de salvar disparam durante o carregamento e
+  // sobrescrevem o Firebase com os valores iniciais vazios/padrão.
+  const canSaveRef = useRef(false);
 
   useEffect(() => { const unsub = onAuthStateChanged(auth, u => { setUser(u); setAuthChecked(true); }); return unsub; }, []);
 
   useEffect(() => {
     if (!user) return;
+    canSaveRef.current = false; // bloqueia salvamento durante carregamento
     (async () => {
       const ig = await store.get("ingles");
-      // Migração: se o formato antigo (notes/schedule/links) existir, inicializa sessions vazio
       if (ig && ig.sessions) setInglesData(ig);
       else setInglesData({ sessions: [] });
 
       const cu = await store.get("cursos"); if (cu) setCursosData(cu);
       const bk = await store.get("books"); if (bk && bk.length > 0) setBooks(bk); else setBooks(initialBooks());
       const lk = await store.get("links-uteis"); if (lk) setLinksData(lk);
+
+      // Só libera o salvamento DEPOIS que todos os estados foram setados
       setLoaded(true);
+      canSaveRef.current = true;
     })();
   }, [user]);
 
-  useEffect(() => { if (loaded) store.set("ingles", inglesData); }, [inglesData, loaded]);
-  useEffect(() => { if (loaded) store.set("cursos", cursosData); }, [cursosData, loaded]);
-  useEffect(() => { if (loaded) store.set("books", books); }, [books, loaded]);
-  useEffect(() => { if (loaded) store.set("links-uteis", linksData); }, [linksData, loaded]);
+  useEffect(() => { if (canSaveRef.current) store.set("ingles", inglesData); }, [inglesData]);
+  useEffect(() => { if (canSaveRef.current) store.set("cursos", cursosData); }, [cursosData]);
+  useEffect(() => { if (canSaveRef.current) store.set("books", books); }, [books]);
+  useEffect(() => { if (canSaveRef.current) store.set("links-uteis", linksData); }, [linksData]);
 
   const handleLogin = (u, token) => { setUser(u); setAccessToken(token); };
-  const handleLogout = async () => { await signOut(auth); setUser(null); setAccessToken(""); sessionStorage.removeItem("vit-gcal-token"); setLoaded(false); };
+  const handleLogout = async () => { canSaveRef.current = false; await signOut(auth); setUser(null); setAccessToken(""); sessionStorage.removeItem("vit-gcal-token"); setLoaded(false); };
   const handleReconnect = async () => {
     try {
       sessionStorage.removeItem("vit-gcal-token");
