@@ -4,7 +4,7 @@ import { getAuth, GoogleAuthProvider } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBAtLz84CPiG8oRYN4ivglf2eEXz81yA8o",
-  authDomain: "cantinho-da-vit.firebaseapp.com",
+  authDomain: "cantinho-da-vit.vercel.app",
   projectId: "cantinho-da-vit",
   storageBucket: "cantinho-da-vit.firebasestorage.app",
   messagingSenderId: "153927080521",
